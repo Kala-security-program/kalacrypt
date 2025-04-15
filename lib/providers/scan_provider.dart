@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:wifi_iot/wifi_iot.dart';
 import '../models/device.dart';
@@ -12,22 +13,20 @@ class ScanProvider extends ChangeNotifier {
   final Map<String, Device> _devices = {};
   final ScanData history = ScanData();
 
-  // RF‑DoS detection stream
   final _rfDosController = StreamController<bool>.broadcast();
   Stream<bool> get rfDosDetected => _rfDosController.stream;
 
-  // BLE subscription
   StreamSubscription<DiscoveredDevice>? _bleSub;
-
   Timer? _scanTimer;
 
-  /// Public scan intervals (seconds)
   static const int bleInterval = 5;
   static const int wifiInterval = 10;
   static const int overallInterval = 5;
 
-  // For disappearance detection
   List<String> _lastScanMacs = [];
+
+  bool _scanBleEnabled = true;
+  bool _scanWifiEnabled = true;
 
   ScanProvider() {
     _initScans();
@@ -35,27 +34,44 @@ class ScanProvider extends ChangeNotifier {
 
   List<Device> get devices => _devices.values.toList();
 
-  /// Initialize periodic scans
-  void _initScans() {
-    _runScans(); // immediate
-    _scanTimer = Timer.periodic(
-      Duration(seconds: overallInterval),
-      (_) => _runScans(),
-    );
+  Future<void> _loadScanSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    _scanBleEnabled = prefs.getBool('scanBle') ?? true;
+    _scanWifiEnabled = prefs.getBool('scanWifi') ?? true;
   }
 
-  /// Combined BLE + Wi‑Fi scan
+  void _initScans() {
+    _loadScanSettings().then((_) {
+      _runScans();
+      _scanTimer = Timer.periodic(Duration(seconds: overallInterval), (
+        _,
+      ) async {
+        await _loadScanSettings();
+        _runScans();
+      });
+    });
+  }
+
   Future<void> _runScans() async {
-    await _scanBluetooth();
-    await _scanWifi();
+    final List<Device> combined = [];
+
+    if (_scanBleEnabled) {
+      final bleDevices = await _scanBluetooth();
+      combined.addAll(bleDevices);
+    }
+
+    if (_scanWifiEnabled) {
+      final wifiDevices = await _scanWifi();
+      combined.addAll(wifiDevices);
+    }
+
+    _evaluateRfDos(combined);
     notifyListeners();
   }
 
-  /// BLE scan returning list of devices
-  Future<void> _scanBluetooth() async {
+  Future<List<Device>> _scanBluetooth() async {
     final List<Device> found = [];
     try {
-      // Cancel previous BLE scan subscription
       await _bleSub?.cancel();
       await _ble.deinitialize();
 
@@ -76,13 +92,12 @@ class ScanProvider extends ChangeNotifier {
       await Future.delayed(Duration(seconds: bleInterval));
       await _bleSub?.cancel();
     } catch (e) {
-      debugPrint('BLE scan error: $e');
+      debugPrint('BLE scan error: \$e');
     }
-    _evaluateRfDos(found);
+    return found;
   }
 
-  /// Wi‑Fi scan returning list of networks
-  Future<void> _scanWifi() async {
+  Future<List<Device>> _scanWifi() async {
     final List<Device> found = [];
     try {
       final list = await WiFiForIoTPlugin.loadWifiList();
@@ -101,12 +116,11 @@ class ScanProvider extends ChangeNotifier {
         }
       }
     } catch (e) {
-      debugPrint('Wi‑Fi scan error: $e');
+      debugPrint('Wi‑Fi scan error: \$e');
     }
-    _evaluateRfDos(found);
+    return found;
   }
 
-  /// RF‑DoS detection: disappearance or weak-signal flood
   void _evaluateRfDos(List<Device> current) {
     final currentMacs = current.map((d) => d.mac).toList();
 

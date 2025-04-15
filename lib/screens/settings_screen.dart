@@ -1,3 +1,5 @@
+// lib/screens/settings_screen.dart
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -22,6 +24,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _wifiInterval = ScanProvider.wifiInterval.toDouble();
   bool _showBle = true;
   bool _showWifi = true;
+  bool _scanBle = true;
+  bool _scanWifi = true;
 
   @override
   void initState() {
@@ -39,10 +43,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           p.getDouble('wifiInterval') ?? ScanProvider.wifiInterval.toDouble();
       _showBle = p.getBool('showBle') ?? true;
       _showWifi = p.getBool('showWifi') ?? true;
+      _scanBle = p.getBool('scanBle') ?? true;
+      _scanWifi = p.getBool('scanWifi') ?? true;
     });
-    // Load theme via provider
-    final themeProv = Provider.of<ThemeProvider>(context, listen: false);
-    // themeProv.isCyberpunk is already set on startup
   }
 
   Future<void> _savePrefs() async {
@@ -52,6 +55,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await p.setDouble('wifiInterval', _wifiInterval);
     await p.setBool('showBle', _showBle);
     await p.setBool('showWifi', _showWifi);
+    await p.setBool('scanBle', _scanBle);
+    await p.setBool('scanWifi', _scanWifi);
   }
 
   Future<void> _exportLogs() async {
@@ -95,7 +100,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: EdgeInsets.all(16),
         children: [
-          // Theme toggle
           Text('Theme', style: GoogleFonts.shareTechMono(fontSize: 16)),
           Row(
             children: [
@@ -161,7 +165,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChangeEnd: (_) => _savePrefs(),
           ),
 
-          SizedBox(height: 12),
           SwitchListTile(
             title: Text(
               'Show Bluetooth Devices',
@@ -183,6 +186,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged:
                 (v) => setState(() {
                   _showWifi = v;
+                  _savePrefs();
+                }),
+          ),
+
+          SwitchListTile(
+            title: Text(
+              'Enable Bluetooth Scanning',
+              style: GoogleFonts.shareTechMono(),
+            ),
+            value: _scanBle,
+            onChanged:
+                (v) => setState(() {
+                  _scanBle = v;
+                  _savePrefs();
+                }),
+          ),
+          SwitchListTile(
+            title: Text(
+              'Enable Wi‑Fi Scanning',
+              style: GoogleFonts.shareTechMono(),
+            ),
+            value: _scanWifi,
+            onChanged:
+                (v) => setState(() {
+                  _scanWifi = v;
                   _savePrefs();
                 }),
           ),
