@@ -53,6 +53,7 @@ class ScanProvider extends ChangeNotifier {
   }
 
   Future<void> _runScans() async {
+    _devices.clear(); // Clear previous results
     final List<Device> combined = [];
 
     if (_scanBleEnabled) {
@@ -65,35 +66,47 @@ class ScanProvider extends ChangeNotifier {
       combined.addAll(wifiDevices);
     }
 
+    if (combined.isEmpty) {
+      history.clear();
+    }
+
     _evaluateRfDos(combined);
     notifyListeners();
   }
 
   Future<List<Device>> _scanBluetooth() async {
     final List<Device> found = [];
+
     try {
+      // Cancel any previous scan
       await _bleSub?.cancel();
-      await _ble.deinitialize();
 
       _bleSub = _ble
-          .scanForDevices(withServices: [], scanMode: ScanMode.balanced)
+          .scanForDevices(withServices: [], scanMode: ScanMode.lowLatency)
           .listen((d) {
+            // Optional: Filter duplicates
+            if (_devices.containsKey(d.id)) return;
+
             final dev = Device(
               mac: d.id,
               name: d.name.isEmpty ? 'Unknown BLE' : d.name,
               rssi: d.rssi,
               type: DeviceType.bluetooth,
             );
+
             found.add(dev);
             _devices[d.id] = dev;
             history.addSample(d.id, d.rssi);
+            notifyListeners(); // Optional: show devices immediately
           });
 
+      // Wait for a few seconds to collect results
       await Future.delayed(Duration(seconds: bleInterval));
       await _bleSub?.cancel();
     } catch (e) {
-      debugPrint('BLE scan error: \$e');
+      debugPrint('BLE scan error: $e');
     }
+
     return found;
   }
 

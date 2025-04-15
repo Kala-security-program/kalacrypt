@@ -20,4 +20,8 @@ class ScanData {
 
   /// Get samples for a specific device
   List<SignalSample> samplesFor(String mac) => data[mac] ?? [];
+
+  void clear() {
+    data.clear();
+  }
 }
