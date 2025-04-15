@@ -72,8 +72,8 @@ class AboutScreen extends StatelessWidget {
             SizedBox(height: 16),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                primary: Colors.transparent,
-                onPrimary: accent,
+                foregroundColor: accent,
+                backgroundColor: Colors.transparent,
                 side: BorderSide(color: accent),
                 padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),

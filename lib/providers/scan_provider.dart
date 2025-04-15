@@ -16,6 +16,9 @@ class ScanProvider extends ChangeNotifier {
   final _rfDosController = StreamController<bool>.broadcast();
   Stream<bool> get rfDosDetected => _rfDosController.stream;
 
+  // BLE subscription
+  StreamSubscription<DiscoveredDevice>? _bleSub;
+
   Timer? _scanTimer;
 
   /// Public scan intervals (seconds)
@@ -43,25 +46,20 @@ class ScanProvider extends ChangeNotifier {
 
   /// Combined BLE + Wi‑Fi scan
   Future<void> _runScans() async {
-    final bleFuture = _scanBluetooth();
-    final wifiFuture = _scanWifi();
-    final results = await Future.wait([bleFuture, wifiFuture]);
-
-    final combined = <Device>[];
-    combined.addAll(results[0]);
-    combined.addAll(results[1]);
-
-    _evaluateRfDos(combined);
+    await _scanBluetooth();
+    await _scanWifi();
     notifyListeners();
   }
 
   /// BLE scan returning list of devices
-  Future<List<Device>> _scanBluetooth() async {
+  Future<void> _scanBluetooth() async {
     final List<Device> found = [];
     try {
-      // Stop any previous BLE scan
+      // Cancel previous BLE scan subscription
+      await _bleSub?.cancel();
       await _ble.deinitialize();
-      final sub = _ble
+
+      _bleSub = _ble
           .scanForDevices(withServices: [], scanMode: ScanMode.balanced)
           .listen((d) {
             final dev = Device(
@@ -76,15 +74,15 @@ class ScanProvider extends ChangeNotifier {
           });
 
       await Future.delayed(Duration(seconds: bleInterval));
-      await sub.cancel();
+      await _bleSub?.cancel();
     } catch (e) {
       debugPrint('BLE scan error: $e');
     }
-    return found;
+    _evaluateRfDos(found);
   }
 
   /// Wi‑Fi scan returning list of networks
-  Future<List<Device>> _scanWifi() async {
+  Future<void> _scanWifi() async {
     final List<Device> found = [];
     try {
       final list = await WiFiForIoTPlugin.loadWifiList();
@@ -105,35 +103,31 @@ class ScanProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Wi‑Fi scan error: $e');
     }
-    return found;
+    _evaluateRfDos(found);
   }
 
   /// RF‑DoS detection: disappearance or weak-signal flood
   void _evaluateRfDos(List<Device> current) {
-    // Current MAC list
     final currentMacs = current.map((d) => d.mac).toList();
 
-    // 1) Disappearance check
     final missingCount =
         _lastScanMacs.where((mac) => !currentMacs.contains(mac)).length;
     final missingRatio =
         _lastScanMacs.isEmpty ? 0.0 : missingCount / _lastScanMacs.length;
 
-    // 2) Weak-signal check
     final weakCount = current.where((d) => d.rssi < -85).length;
     final weakRatio = current.isEmpty ? 0.0 : weakCount / current.length;
 
-    // DoS if either criterion exceeded
     final dos = missingRatio > 0.5 || weakRatio > 0.6;
     _rfDosController.add(dos);
 
-    // Update history for next scan
     _lastScanMacs = currentMacs;
   }
 
   @override
   void dispose() {
     _scanTimer?.cancel();
+    _bleSub?.cancel();
     _rfDosController.close();
     super.dispose();
   }
