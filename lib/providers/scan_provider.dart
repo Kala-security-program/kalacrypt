@@ -76,16 +76,13 @@ class ScanProvider extends ChangeNotifier {
 
   Future<List<Device>> _scanBluetooth() async {
     final List<Device> found = [];
-
     try {
-      // Cancel any previous scan
-      await _bleSub?.cancel();
+      await _bleSub?.cancel(); // stop previous scan
 
       _bleSub = _ble
           .scanForDevices(withServices: [], scanMode: ScanMode.lowLatency)
           .listen((d) {
-            // Optional: Filter duplicates
-            if (_devices.containsKey(d.id)) return;
+            if (_devices.containsKey(d.id)) return; // avoid duplicates
 
             final dev = Device(
               mac: d.id,
@@ -93,20 +90,17 @@ class ScanProvider extends ChangeNotifier {
               rssi: d.rssi,
               type: DeviceType.bluetooth,
             );
-
             found.add(dev);
             _devices[d.id] = dev;
             history.addSample(d.id, d.rssi);
-            notifyListeners(); // Optional: show devices immediately
+            notifyListeners(); // show new device immediately
           });
 
-      // Wait for a few seconds to collect results
       await Future.delayed(Duration(seconds: bleInterval));
       await _bleSub?.cancel();
     } catch (e) {
       debugPrint('BLE scan error: $e');
     }
-
     return found;
   }
 
